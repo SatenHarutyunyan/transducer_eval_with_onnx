@@ -73,7 +73,7 @@ class ASRBPEMixin(ABC):
                 model_path = os.path.join(self.tokenizer_dir, 'tokenizer.model')
             model_path = self.register_artifact('tokenizer.model_path', model_path)
             self.model_path = model_path
-
+            
             if 'special_tokens' in self.tokenizer_cfg:
                 special_tokens = self.tokenizer_cfg['special_tokens']
 

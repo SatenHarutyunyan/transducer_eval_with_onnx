@@ -161,37 +161,8 @@ class NemoClient:
                         filepaths=filepaths, 
                         logprobs=logprobs)
         
-        if self.lm_path:
-            vocab = asr_model.decoder.vocabulary
-            ids_to_text_func = None
-            if self.encoding_level == "subword":
-                TOKEN_OFFSET = 100
-                vocab = [chr(idx + TOKEN_OFFSET) for idx in range(len(vocab))]
-                ids_to_text_func = asr_model.tokenizer.ids_to_text
-
-            beam_search_lm = nemo_asr.modules.BeamSearchDecoderWithLM(
-                vocab=vocab,
-                beam_width=self.beam_width,
-                alpha=self.alpha, 
-                beta=self.beta,
-                lm_path=self.lm_path,
-                num_cpus=self.n_cpu,
-                cutoff_top_n=len(vocab),
-                cutoff_prob=1,
-                input_tensor=False)
-
-            exp_hypotheses = [softmax(i) for i in hypotheses]
-            with nemo.core.typecheck.disable_checks():
-                beam_search_pred = beam_search_lm.forward(log_probs=exp_hypotheses, log_probs_length=None)
-            hypotheses = []
-            for i in range(len(exp_hypotheses)):
-                best_beam = max(beam_search_pred[i], key=itemgetter(0))[1]
-                if ids_to_text_func is not None:
-                    # For BPE encodings, need to shift by TOKEN_OFFSET to retrieve the original sub-word ids
-                    pred_text = ids_to_text_func([ord(c) - TOKEN_OFFSET for c in best_beam])
-                else:
-                    pred_text = best_beam
-                hypotheses.append(pred_text)
+    
+     
         if self.output_filename:
             save_transcriptions(self, filepaths, hypotheses)
         wer_value = word_error_rate(hypotheses=hypotheses, references=gold_texts)
@@ -218,7 +189,7 @@ def main():
     args = parser.parse_args()
     args.model_path = '/home/tsargsyan/davit/nemo-models/stt_en_conformer_transducer_medium.nemo'
     # args.model_path = 
-    args.dataset_manifest = '/home/tsargsyan/saten/NeMo3/toy-manifest.json'
+    args.dataset_manifest =  '../manifests/10toy-manifest.json'
     # args.dataset_manifest = '/data/ASR_DATA/ljspeech/asr-ljspeech-test-textnorm-nonzeros-duration.json'
     client = NemoClient(**vars(args))
     client.evaluate()

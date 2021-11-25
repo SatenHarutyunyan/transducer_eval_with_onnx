@@ -294,8 +294,10 @@ class EncDecRNNTBPEModel(EncDecRNNTModel, ASRBPEMixin):
             augmentor = None
 
         shuffle = config['shuffle']
-
+        
+       
         # Instantiate tarred dataset loader or normal dataset loader
+        
         if config.get('is_tarred', False):
             if ('tarred_audio_filepaths' in config and config['tarred_audio_filepaths'] is None) or (
                 'manifest_filepath' in config and config['manifest_filepath'] is None
@@ -324,7 +326,7 @@ class EncDecRNNTBPEModel(EncDecRNNTModel, ASRBPEMixin):
             dataset = audio_to_text_dataset.get_bpe_dataset(
                 config=config, tokenizer=self.tokenizer, augmentor=augmentor
             )
-
+       
         if type(dataset) is ChainDataset:
             collate_fn = dataset.datasets[0].collate_fn
         else:
@@ -366,6 +368,8 @@ class EncDecRNNTBPEModel(EncDecRNNTModel, ASRBPEMixin):
             'pin_memory': True,
             'use_start_end_token': self.cfg.validation_ds.get('use_start_end_token', False),
         }
-
+        # print(dl_config)
+        # print("MANE MANE MANEAAAAAAEEEE"*77)
+        # quit()
         temporary_datalayer = self._setup_dataloader_from_config(config=DictConfig(dl_config))
         return temporary_datalayer

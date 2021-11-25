@@ -4,21 +4,21 @@ import json
 import os
 import tempfile
 from argparse import ArgumentParser
+from nemo.collections.asr.data import audio_to_text_dataset
 
 import torch
 from tqdm import tqdm
 
 from nemo.collections.asr.metrics.wer import word_error_rate
 from nemo.collections.asr.models.asr_model import ASRModel
-from nemo.collections.asr.modules.rnnt import RNNTDecoder
 from my_beam_decoding import BeamRNNTInfer
 from my_greedy_decoding import GreedyRNNTInfer
-from my_rnnt_wer import RNNTDecoding
+from my_rnnt_wer_bpe import RNNTBPEDecoding
 from nemo.utils import logging
 from omegaconf import DictConfig, OmegaConf, open_dict
 import onnx
 import onnxruntime  
-
+from my_mixins import ASRBPEMixin
 from nemo.core.classes.common import Serialization
 
 def parse_arguments():
@@ -41,11 +41,13 @@ def parse_arguments():
     args.decoder_path = '../models/decoder2.pt'
     args.joint_path = '../models/joint2.pt'
     args.config_path = '../models/config/model_config.yaml' 
-    # args.dataset_manifest = '/data/ASR_DATA/ljspeech/asr-ljspeech-test-textnorm-nonzeros-duration.json'
-    args.dataset_manifest = '../manifests/10toy-manifest.json'
+    args.dataset_manifest = '/data/ASR_DATA/ljspeech/asr-ljspeech-test-textnorm-nonzeros-duration.json'
+    # args.dataset_manifest = '../manifests/10toy-manifest.json'
     args.batch_size = 1
-    args.output_filename = '../manifests10toy-nemo-but-decdoing.json'
+    args.output_filename = '../manifests/manifests10toy-nemo-but-decdoing.json'
     args.decoding_strategy = 'greedy'
+    args.tokenizer_model_path = '/home/tsargsyan/saten/streaming/models/config/e7a9ab91030245cd9d84ef93a02cec35_tokenizer.model'
+    args.tokenizer_vocab_path = '/home/tsargsyan/saten/streaming/models/config/6adfc91e052e4ea6886b21f6b2c47b1d_tokenizer.vocab'
     return args
 
 
@@ -196,9 +198,55 @@ class Client:
         nemo_model.freeze()
         self.nemo_model = nemo_model.to('cpu')
    
-    def initialize_config_from_nemo(self):
-        self.cfg = self.nemo_model.cfg
-     
+    def initialize_decoding_and_tokenizer(self,tokenizer_model_path,tokenizer_vocab_path):
+        
+        mixin = ASRBPEMixin()
+        mixin._setup_tokenizer(self.cfg.tokenizer,tokenizer_model_path, tokenizer_vocab_path)
+        self.tokenizer = mixin.tokenizer
+        self.decoding = RNNTBPEDecoding(
+            decoding_cfg=self.cfg.decoding, decoder=self.decoder, joint=self.joint, tokenizer=self.tokenizer
+        )
+        
+    def _setup_dataloader_from_config(self, config):
+
+        shuffle = config['shuffle']
+
+        # Instantiate tarred dataset loader or normal dataset loader
+        assert not config.get('is_tarred', False), 'error'
+        assert not ('manifest_filepath' in config and config['manifest_filepath'] is None),'error'
+
+        dataset = audio_to_text_dataset.get_bpe_dataset(
+            config=config, tokenizer=self.tokenizer, augmentor=None)
+
+        collate_fn = dataset.collate_fn
+
+        return torch.utils.data.DataLoader(
+            dataset=dataset,
+            batch_size=config['batch_size'],
+            collate_fn=collate_fn,
+            drop_last=config.get('drop_last', False),
+            shuffle=shuffle,
+            num_workers=config.get('num_workers', 0),
+            pin_memory=config.get('pin_memory', False),
+        )
+
+    def _setup_transcribe_dataloader(self, config) -> 'torch.utils.data.DataLoader':
+        # configs type was Dict from typing
+
+        batch_size = min(config['batch_size'], len(config['paths2audio_files']))
+        dl_config = {
+            'manifest_filepath': os.path.join(config['temp_dir'], 'manifest.json'),
+            'sample_rate': self.preprocessor._sample_rate,
+            'batch_size': batch_size,
+            'shuffle': False,
+            'num_workers': min(batch_size, os.cpu_count() - 1),
+            'pin_memory': True,
+            'use_start_end_token': self.cfg.validation_ds.get('use_start_end_token', False),
+        }
+        # print('dl_config',dl_config)
+        # print("MANE MANE MANEAAAAAAEEEE"*77)
+        temporary_datalayer = self._setup_dataloader_from_config(config=DictConfig(dl_config))
+        return temporary_datalayer
     
         
 
@@ -206,33 +254,25 @@ class Client:
                         nemo_model_path,
                         decoding_strategy,
                         config_path,
+                        tokenizer_vocab_path, tokenizer_model_path,
                         past_m = 980, present_n = 1000, future_k = 1020,
                         max_symbols_per_step = None):
 
             # initializing sreaming params
         
         self.initialize_streaming_params(past_m, present_n, future_k)
-
-
-        self.initialize_nemo_model(nemo_model_path) #using for decoding
-
+        # self.initialize_nemo_model(nemo_model_path) #using for decoding
         self.initialize_config(config_path)
-        # self.initialize_config_from_nemo()
-
-        
         self.initialize_encoder(encoder_onnx_path)
         self.initialize_decoder_joint(decoder_path, joint_path)
-       
         self.initialize_preprocessor()
-        #  self.nemo_model.cfg #omgeaconf DictConfig tipi object a
 
+        # model_path /tmp/tmptaslozqy/e7a9ab91030245cd9d84ef93a02cec35_tokenizer.model
 
-        self.decoding = RNNTDecoding(
-                decoding_cfg=self.cfg.decoding, decoder=self.decoder, joint=self.joint, vocabulary=self.joint.vocabulary,
-            )
-        # print('self.cfg.decoding in saten',self.cfg.decoding)
-
-
+        # this is not being used in infer
+        # set up decoding class
+        self.initialize_decoding_and_tokenizer(tokenizer_model_path = tokenizer_model_path, tokenizer_vocab_path = tokenizer_vocab_path)
+   
         if decoding_strategy =='beam':
             self.rnnt_infer = BeamRNNTInfer(
                 decoder_model=self.decoder,
@@ -252,7 +292,6 @@ class Client:
         else:
             raise ValueError("decoding strategy must be greedy or beam")
 
-   
     def infer(self, audio, len_audio):
         """gets padded audio"""
         audio_start = 0
@@ -274,8 +313,7 @@ class Client:
             best_hyp, nbest_hyps_and_maybe_cache =  self.rnnt_infer(new_encoded,self.new_encoded_len,
                                     previous_kept_hyps_and_maybe_cache=previous_kept_hyps_and_maybe_cache)
             # print('best_hyp',best_hyp)
-            # hypotheses = self.decoding.decode_hypothesis([best_hyp])  
-            hypotheses = self.nemo_model.decoding.decode_hypothesis([best_hyp])  
+            hypotheses = self.decoding.decode_hypothesis([best_hyp])  
 
             # Extract text from the hypothesis
             texts = [h.text for h in hypotheses]
@@ -286,17 +324,14 @@ class Client:
 
             del encoded
             del new_encoded
-        print('texts',texts)
-        print('\n \n \n')
+        # print('texts',texts)
+        # print('\n \n \n')
         return texts
 
     def evaluate(self):
         args = parse_arguments()
         # Instantiate pytorch model
-        nemo_model = args.nemo_model
-        nemo_model = ASRModel.restore_from(nemo_model, map_location='cpu')  # type: ASRModel
-        nemo_model.freeze()
-
+       
     
         # decoding = ONNXGreedyBatchedRNNTInfer(encoder_model, decoder_model, max_symbols_per_step)
         audio_filepath, gold_texts = resolve_audio_filepaths(args)
@@ -309,8 +344,8 @@ class Client:
                     fp.write(json.dumps(entry) + '\n')
 
             config = {'paths2audio_files': audio_filepath, 'batch_size': args.batch_size, 'temp_dir': tmpdir}
-            temporary_datalayer = nemo_model._setup_transcribe_dataloader(config)
-
+            # temporary_datalayer = self.nemo_model._setup_transcribe_dataloader(config)
+            temporary_datalayer = self._setup_transcribe_dataloader(config)
             all_hypothesis = []
             for test_batch in tqdm(temporary_datalayer, desc="ONNX Transcribing"):
                 
@@ -326,7 +361,7 @@ class Client:
         if args.output_filename:
             save_transcriptions(args, audio_filepath, all_hypothesis)
         # Measure error rate between onnx and pytorch transcipts
-        wer = word_error_rate(all_hypothesis, gold_texts, use_cer=True)
+        wer = word_error_rate(all_hypothesis, gold_texts, use_cer=False)
         # assert wer < args.threshold, "Threshold violation !"
 
         print("Character error rate :", wer)
@@ -341,6 +376,8 @@ def main():
                     joint_path = args.joint_path ,
                     nemo_model_path = args.nemo_model,
                     config_path = args.config_path,
+                    max_symbols_per_step = args.max_symbols_per_step,
+                    tokenizer_model_path = args.tokenizer_model_path ,tokenizer_vocab_path = args.tokenizer_vocab_path,
                     decoding_strategy= 'greedy')
     client.evaluate()
 
