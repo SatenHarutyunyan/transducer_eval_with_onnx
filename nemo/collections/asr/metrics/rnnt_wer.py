@@ -200,18 +200,19 @@ class AbstractRNNTDecoding(ABC):
         for ind in range(len(hypotheses_list)):
             # Extract the integer encoded hypothesis
             prediction = hypotheses_list[ind].y_sequence
-
             if type(prediction) != list:
                 prediction = prediction.tolist()
 
             # RNN-T sample level is already preprocessed by implicit CTC decoding
             # Simply remove any blank tokens
             prediction = [p for p in prediction if p != self.blank_id]
-
+            # print('nemo class')
+          
             # De-tokenize the integer tokens
+            # print('prediction',prediction)
             hypothesis = self.decode_tokens_to_str(prediction)
+            # print('hypothesis',hypothesis)
             hypotheses_list[ind].text = hypothesis
-
             if self.compute_hypothesis_token_set:
                 hypotheses_list[ind].tokens = self.decode_ids_to_tokens(prediction)
         return hypotheses_list
@@ -240,7 +241,9 @@ class AbstractRNNTDecoding(ABC):
 
         Returns:
             A list of decoded tokens.
+
         """
+      
         raise NotImplementedError()
 
 

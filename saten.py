@@ -32,17 +32,20 @@ def parse_arguments():
     parser.add_argument('--max_symbols_per_step', type=int, default=5, help='Number of decoding steps')
     parser.add_argument('--batch_size', type=int, default=1, help='Batchsize')
     parser.add_argument('--output_filename', type=str, default=None)
+    parser.add_argument('--model_config', type=str)
+    parser.add_argument('--decoding_strategy', type=str)
 
     args = parser.parse_args()
     args.nemo_model = '/home/tsargsyan/davit/nemo-models/stt_en_conformer_transducer_medium.nemo'
     args.onnx_encoder = '../models/onnxdir/Encoder-tranducer.onnx'
     args.decoder_path = '../models/decoder2.pt'
     args.joint_path = '../models/joint2.pt'
+    args.config_path = '../models/config/model_config.yaml' 
     # args.dataset_manifest = '/data/ASR_DATA/ljspeech/asr-ljspeech-test-textnorm-nonzeros-duration.json'
     args.dataset_manifest = '../manifests/10toy-manifest.json'
     args.batch_size = 1
     args.output_filename = '../manifests10toy-nemo-but-decdoing.json'
-
+    args.decoding_strategy = 'greedy'
     return args
 
 
@@ -100,6 +103,10 @@ def resolve_audio_filepaths(args):
 
     return filepaths, gold_texts
 
+def get_config(config_path: str):
+    # can be str path or OmegaConf / DictConfig object
+    conf = OmegaConf.load(config_path)
+    return conf
 
 from nemo.utils import model_utils
 class Client:
@@ -166,12 +173,8 @@ class Client:
       
         return enc_out, encoded_length   
     
-    def initialize_decoder_joint(self, nemo_model_path, decoder_path, joint_path):
-        nemo_model = ASRModel.restore_from(nemo_model_path, map_location='cpu')  # type: ASRModel
-        nemo_model.freeze()
-        nemo_model = nemo_model.to('cpu')
-        self.nemo_model = nemo_model
-        self.cfg = nemo_model.cfg
+    def initialize_decoder_joint(self, decoder_path, joint_path):
+        
         # model = nemo_model.joint  #this is how I save those (classes have torch.nn.module as a grandgrandparent)
         # torch.save(model.state_dict(), './joint.pt')
         # exit('exiting')
@@ -185,26 +188,49 @@ class Client:
         # self.decoder = nemo_model.decoding.decoding.decoder
         # self.joint =nemo_model.decoding.decoding.joint
 
-       
+    def initialize_config(self,config_path):
+        self.cfg = get_config(config_path) 
+
+    def initialize_nemo_model(self,nemo_model_path):
+        nemo_model = ASRModel.restore_from(nemo_model_path, map_location='cpu')  # type: ASRModel
+        nemo_model.freeze()
+        self.nemo_model = nemo_model.to('cpu')
+   
+    def initialize_config_from_nemo(self):
+        self.cfg = self.nemo_model.cfg
+     
+    
+        
+
     def __init__(self,  encoder_onnx_path, decoder_path, joint_path,
                         nemo_model_path,
                         decoding_strategy,
+                        config_path,
                         past_m = 980, present_n = 1000, future_k = 1020,
                         max_symbols_per_step = None):
 
             # initializing sreaming params
+        
         self.initialize_streaming_params(past_m, present_n, future_k)
+
+
+        self.initialize_nemo_model(nemo_model_path) #using for decoding
+
+        self.initialize_config(config_path)
+        # self.initialize_config_from_nemo()
+
+        
         self.initialize_encoder(encoder_onnx_path)
-        self.initialize_decoder_joint(nemo_model_path, decoder_path, joint_path)
-        self.cfg = self.nemo_model.cfg
+        self.initialize_decoder_joint(decoder_path, joint_path)
+       
         self.initialize_preprocessor()
         #  self.nemo_model.cfg #omgeaconf DictConfig tipi object a
-       
-        
+
+
         self.decoding = RNNTDecoding(
                 decoding_cfg=self.cfg.decoding, decoder=self.decoder, joint=self.joint, vocabulary=self.joint.vocabulary,
             )
-        print('self.cfg.decoding in saten',self.cfg.decoding)
+        # print('self.cfg.decoding in saten',self.cfg.decoding)
 
 
         if decoding_strategy =='beam':
@@ -248,8 +274,9 @@ class Client:
             best_hyp, nbest_hyps_and_maybe_cache =  self.rnnt_infer(new_encoded,self.new_encoded_len,
                                     previous_kept_hyps_and_maybe_cache=previous_kept_hyps_and_maybe_cache)
             # print('best_hyp',best_hyp)
+            # hypotheses = self.decoding.decode_hypothesis([best_hyp])  
             hypotheses = self.nemo_model.decoding.decode_hypothesis([best_hyp])  
-            
+
             # Extract text from the hypothesis
             texts = [h.text for h in hypotheses]
             # print(texts)
@@ -313,6 +340,7 @@ def main():
                     decoder_path = args.decoder_path ,
                     joint_path = args.joint_path ,
                     nemo_model_path = args.nemo_model,
+                    config_path = args.config_path,
                     decoding_strategy= 'greedy')
     client.evaluate()
 

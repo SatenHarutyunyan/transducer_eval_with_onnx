@@ -282,7 +282,6 @@ class AbstractRNNTDecoding(ABC):
         for ind in range(len(hypotheses_list)):
             # Extract the integer encoded hypothesis
             prediction = hypotheses_list[ind].y_sequence
-
             if type(prediction) != list:
                 prediction = prediction.tolist()
 
@@ -293,7 +292,6 @@ class AbstractRNNTDecoding(ABC):
             # De-tokenize the integer tokens
             hypothesis = self.decode_tokens_to_str(prediction)
             hypotheses_list[ind].text = hypothesis
-
             if self.compute_hypothesis_token_set:
                 hypotheses_list[ind].tokens = self.decode_ids_to_tokens(prediction)
         return hypotheses_list
@@ -341,17 +339,7 @@ class RNNTDecoding(AbstractRNNTDecoding):
                 tokens as well as the decoded string. Default is False in order to avoid double decoding
                 unless required.
 
-            preserve_alignments: Bool flag which preserves the history of logprobs generated during
-                decoding (sample / batched). When set to true, the Hypothesis will contain
-                the non-null value for `logprobs` in it. Here, `logprobs` is a List of torch.Tensors.
-
-                In order to obtain this hypothesis, please utilize `rnnt_decoder_predictions_tensor` function
-                with the `return_hypotheses` flag set to True.
-
-                The length of the list corresponds to the Acoustic Length (T).
-                Each value in the list (Ti) is a torch.Tensor (U), representing 1 or more targets from a vocabulary.
-                U is the number of target tokens for the current timestep Ti.
-
+          
             The config may further contain the following sub-dictionaries:
             "greedy":
                 max_symbols: int, describing the maximum number of target tokens to decode per
@@ -365,44 +353,7 @@ class RNNTDecoding(AbstractRNNTDecoding):
 
                 score_norm: optional bool, whether to normalize the returned beam score in the hypotheses.
                     Set to True by default.
-
-                return_best_hypothesis: optional bool, whether to return just the best hypothesis or all of the
-                    hypotheses after beam search has concluded. This flag is set by default.
-
-                tsd_max_sym_exp: optional int, determines number of symmetric expansions of the target symbols
-                    per timestep of the acoustic model. Larger values will allow longer sentences to be decoded,
-                    at increased cost to execution time.
-
-                alsd_max_target_len: optional int or float, determines the potential maximum target sequence length.
-                    If an integer is provided, it can decode sequences of that particular maximum length.
-                    If a float is provided, it can decode sequences of int(alsd_max_target_len * seq_len),
-                    where seq_len is the length of the acoustic model output (T).
-
-                    NOTE:
-                        If a float is provided, it can be greater than 1!
-                        By default, a float of 2.0 is used so that a target sequence can be at most twice
-                        as long as the acoustic model output length T.
-
-                                maes_num_steps: Number of adaptive steps to take. From the paper, 2 steps is generally sufficient,
-                    and can be reduced to 1 to improve decoding speed while sacrificing some accuracy. int > 0.
-
-                maes_prefix_alpha: Maximum prefix length in prefix search. Must be an integer, and is advised to keep this as 1
-                    in order to reduce expensive beam search cost later. int >= 0.
-
-                maes_expansion_beta: Maximum number of prefix expansions allowed, in addition to the beam size.
-                    Effectively, the number of hypothesis = beam_size + maes_expansion_beta. Must be an int >= 0,
-                    and affects the speed of inference since large values will perform large beam search in the next step.
-
-                maes_expansion_gamma: Float pruning threshold used in the prune-by-value step when computing the expansions.
-                    The default (2.3) is selected from the paper. It performs a comparison (max_log_prob - gamma <= log_prob[v])
-                    where v is all vocabulary indices in the Vocab set and max_log_prob is the "most" likely token to be
-                    predicted. Gamma therefore provides a margin of additional tokens which can be potential candidates for
-                    expansion apart from the "most likely" candidate.
-                    Lower values will reduce the number of expansions (by increasing pruning-by-value, thereby improving speed
-                    but hurting accuracy). Higher values will increase the number of expansions (by reducing pruning-by-value,
-                    thereby reducing speed but potentially improving accuracy). This is a hyper parameter to be experimentally
-                    tuned on a validation set.
-
+              
                 softmax_temperature: Scales the logits of the joint prior to computing log_softmax.
 
         decoder: The Decoder/Prediction network module.
@@ -428,7 +379,9 @@ class RNNTDecoding(AbstractRNNTDecoding):
         Returns:
             A decoded string.
         """
+        print('tokens',tokens)
         hypothesis = ''.join(self.decode_ids_to_tokens(tokens))
+        print('hypothesis',hypothesis)
         return hypothesis
 
     def decode_ids_to_tokens(self, tokens: List[int]) -> List[str]:
