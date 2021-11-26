@@ -1,54 +1,14 @@
-# Copyright (c) 2020, NVIDIA CORPORATION.  All rights reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
-# Copyright 2017 Johns Hopkins University (Shinji Watanabe)
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#    http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
 
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import torch
 
 from nemo.collections.asr.modules import rnnt_abstract
-from nemo.collections.asr.parts.utils import rnnt_utils
+from rnnt_wer_bpe import Hypothesis
 from nemo.collections.common.parts import rnn
-from nemo.core.classes import typecheck
-from nemo.core.classes.exportable import Exportable
-from nemo.core.neural_types import (
-    AcousticEncodedRepresentation,
-    ElementType,
-    EmbeddedTextType,
-    LabelsType,
-    LengthsType,
-    LogprobsType,
-    LossType,
-    NeuralType,
-)
-from nemo.utils import logging
 
 
-class RNNTDecoder(rnnt_abstract.AbstractRNNTDecoder, Exportable):
+class RNNTDecoder(rnnt_abstract.AbstractRNNTDecoder):
     """A Recurrent Neural Network Transducer Decoder / Prediction Network (RNN-T Prediction Network).
     An RNN-T Decoder/Prediction network, comprised of a stateful LSTM model.
 
@@ -178,7 +138,7 @@ class RNNTDecoder(rnnt_abstract.AbstractRNNTDecoder, Exportable):
         # Flag needed for RNNT export support
         self._rnnt_export = False
 
-    @typecheck()
+    # @typecheck()
     def forward(self, targets, target_length, states=None):
         # y: (B, U)
         y = rnn.label_collate(targets)
@@ -369,7 +329,7 @@ class RNNTDecoder(rnnt_abstract.AbstractRNNTDecoder, Exportable):
         return state
 
     def score_hypothesis(
-        self, hypothesis: rnnt_utils.Hypothesis, cache: Dict[Tuple[int], Any]
+        self, hypothesis: Hypothesis, cache: Dict[Tuple[int], Any]
     ) -> (torch.Tensor, List[torch.Tensor], torch.Tensor):
         """
         Similar to the predict() method, instead this method scores a Hypothesis during beam search.
@@ -422,7 +382,7 @@ class RNNTDecoder(rnnt_abstract.AbstractRNNTDecoder, Exportable):
         return y, new_state, lm_token
 
     def batch_score_hypothesis(
-        self, hypotheses: List[rnnt_utils.Hypothesis], cache: Dict[Tuple[int], Any], batch_states: List[torch.Tensor]
+        self, hypotheses: List[Hypothesis], cache: Dict[Tuple[int], Any], batch_states: List[torch.Tensor]
     ) -> (torch.Tensor, List[torch.Tensor], torch.Tensor):
         """
         Used for batched beam search algorithms. Similar to score_hypothesis method.
@@ -615,95 +575,8 @@ class RNNTDecoder(rnnt_abstract.AbstractRNNTDecoder, Exportable):
         return old_states
 
 
-class RNNTJoint(rnnt_abstract.AbstractRNNTJoint, Exportable):
-    """A Recurrent Neural Network Transducer Joint Network (RNN-T Joint Network).
-    An RNN-T Joint network, comprised of a feedforward model.
-
-    Args:
-        jointnet: A dict-like object which contains the following key-value pairs.
-            encoder_hidden: int specifying the hidden dimension of the encoder net.
-            pred_hidden: int specifying the hidden dimension of the prediction net.
-            joint_hidden: int specifying the hidden dimension of the joint net
-            activation: Activation function used in the joint step. Can be one of
-                ['relu', 'tanh', 'sigmoid'].
-
-            Optionally, it may also contain the following:
-            dropout: float, set to 0.0 by default. Optional dropout applied at the end of the joint net.
-
-        num_classes: int, specifying the vocabulary size that the joint network must predict,
-            excluding the RNNT blank token.
-
-        vocabulary: Optional list of strings/tokens that comprise the vocabulary of the joint network.
-            Unused and kept only for easy access for character based encoding RNNT models.
-
-        log_softmax: Optional bool, set to None by default. If set as None, will compute the log_softmax()
-            based on the value provided.
-
-        preserve_memory: Optional bool, set to False by default. If the model crashes due to the memory
-            intensive joint step, one might try this flag to empty the tensor cache in pytorch.
-
-            Warning: This will make the forward-backward pass much slower than normal.
-            It also might not fix the OOM if the GPU simply does not have enough memory to compute the joint.
-
-        fuse_loss_wer: Optional bool, set to False by default.
-
-            Fuses the joint forward, loss forward and
-            wer forward steps. In doing so, it trades of speed for memory conservation by creating sub-batches
-            of the provided batch of inputs, and performs Joint forward, loss forward and wer forward (optional),
-            all on sub-batches, then collates results to be exactly equal to results from the entire batch.
-
-            When this flag is set, prior to calling forward, the fields `loss` and `wer` (either one) *must*
-            be set using the `RNNTJoint.set_loss()` or `RNNTJoint.set_wer()` methods.
-
-            Further, when this flag is set, the following argument `fused_batch_size` *must* be provided
-            as a non negative integer. This value refers to the size of the sub-batch.
-
-            When the flag is set, the input and output signature of `forward()` of this method changes.
-            Input - in addition to `encoder_outputs` (mandatory argument), the following arguments can be provided.
-                - decoder_outputs (optional). Required if loss computation is required.
-                - encoder_lengths (required)
-                - transcripts (optional). Required for wer calculation.
-                - transcript_lengths (optional). Required for wer calculation.
-                - compute_wer (bool, default false). Whether to compute WER or not for the fused batch.
-
-            Output - instead of the usual `joint` log prob tensor, the following results can be returned.
-                - loss (optional). Returned if decoder_outputs, transcripts and transript_lengths are not None.
-                - wer_numerator + wer_denominator (optional). Returned if transcripts, transcripts_lengths are provided
-                    and compute_wer is set.
-
-        fused_batch_size: Optional int, required if `fuse_loss_wer` flag is set. Determines the size of the
-            sub-batches. Should be any value below the actual batch size per GPU.
-    """
-
-    @property
-    def input_types(self):
-        """Returns definitions of module input ports.
-        """
-        return {
-            "encoder_outputs": NeuralType(('B', 'D', 'T'), AcousticEncodedRepresentation()),
-            "decoder_outputs": NeuralType(('B', 'D', 'T'), EmbeddedTextType()),
-            "encoder_lengths": NeuralType(tuple('B'), LengthsType(), optional=True),
-            "transcripts": NeuralType(('B', 'T'), LabelsType(), optional=True),
-            "transcript_lengths": NeuralType(tuple('B'), LengthsType(), optional=True),
-            "compute_wer": NeuralType(optional=True),
-        }
-
-    @property
-    def output_types(self):
-        """Returns definitions of module output ports.
-        """
-        if not self._fuse_loss_wer:
-            return {
-                "outputs": NeuralType(('B', 'T', 'T', 'D'), LogprobsType()),
-            }
-
-        else:
-            return {
-                "loss": NeuralType(elements_type=LossType(), optional=True),
-                "wer": NeuralType(elements_type=ElementType(), optional=True),
-                "wer_numer": NeuralType(elements_type=ElementType(), optional=True),
-                "wer_denom": NeuralType(elements_type=ElementType(), optional=True),
-            }
+class RNNTJoint(rnnt_abstract.AbstractRNNTJoint ):
+  
 
     def _prepare_for_export(self, **kwargs):
         self.freeze()
@@ -751,7 +624,7 @@ class RNNTJoint(rnnt_abstract.AbstractRNNTJoint, Exportable):
 
         if experimental_fuse_loss_wer is not None:
             # TODO: Deprecate in 1.6
-            logging.warning(
+            print( '!!!!!!!!!!!!WARNING!!!!!!!!!!!',
                 "`experimental_fuse_loss_wer` will be deprecated in NeMo 1.6. Please use `fuse_loss_wer` instead."
             )
             # Override fuse_loss_wer from deprecated argument
@@ -771,7 +644,7 @@ class RNNTJoint(rnnt_abstract.AbstractRNNTJoint, Exportable):
         self.preserve_memory = preserve_memory
 
         if preserve_memory:
-            logging.warning(
+            print('!!!!!!!!!!!!!!!!!!!WARNIGN!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!',
                 "`preserve_memory` was set for the Joint Model. Please be aware this will severely impact "
                 "the forward-backward step time. It also might not solve OOM issues if the GPU simply "
                 "does not have enough memory to compute the joint."
@@ -798,7 +671,7 @@ class RNNTJoint(rnnt_abstract.AbstractRNNTJoint, Exportable):
         # Flag needed for RNNT export support
         self._rnnt_export = False
 
-    @typecheck()
+    # @typecheck()
     def forward(
         self,
         encoder_outputs: torch.Tensor,

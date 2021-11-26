@@ -1,24 +1,23 @@
-# Copyright (c) 2020, NVIDIA CORPORATION.  All rights reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional, Tuple
-
 import torch
+from rnnt_wer_bpe import Hypothesis
+from torch.nn import Module
 
-from nemo.collections.asr.parts.utils.rnnt_utils import Hypothesis
-from nemo.core import NeuralModule
+class NeuralModule(Module):
+    """
+    Abstract class offering interface shared between all PyTorch Neural Modules.
+    """
 
+    def freeze(self) -> None:
+        r"""
+        Freeze all params for inference.
+        """
+        for param in self.parameters():
+            param.requires_grad = False
+
+        self.eval()
 
 class AbstractRNNTJoint(NeuralModule, ABC):
     """

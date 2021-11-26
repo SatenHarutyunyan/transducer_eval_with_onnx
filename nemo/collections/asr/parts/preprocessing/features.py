@@ -1,61 +1,17 @@
-# Copyright (c) 2020, NVIDIA CORPORATION.  All rights reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-#
-# Copyright (c) 2018 Ryan Leary
-#
-# Permission is hereby granted, free of charge, to any person obtaining a copy
-# of this software and associated documentation files (the "Software"), to deal
-# in the Software without restriction, including without limitation the rights
-# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-# copies of the Software, and to permit persons to whom the Software is
-# furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included in all
-# copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-# SOFTWARE.
-# This file contains code artifacts adapted from https://github.com/ryanleary/patter
-import math
+
+# import math
 import random
 
 import librosa
-import numpy as np
+# import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
+# import torch.nn.functional as F
 from librosa.util import tiny
 from torch.autograd import Variable
 
-from nemo.collections.asr.parts.preprocessing.perturb import AudioAugmentor
 from nemo.collections.asr.parts.preprocessing.segment import AudioSegment
-from nemo.utils import logging
-
-# TODO @blisc: Perhaps refactor instead of import guarding
-try:
-    from torch_stft import STFT
-except ModuleNotFoundError:
-    from nemo.utils.exceptions import CheckInstall
-
-    # fmt: off
-    class STFT(CheckInstall): pass
-    # fmt: on
+from torch_stft import STFT
 
 CONSTANT = 1e-5
 
@@ -107,7 +63,8 @@ def splice_frames(x, frame_splicing):
 
 class WaveformFeaturizer(object):
     def __init__(self, sample_rate=16000, int_values=False, augmentor=None):
-        self.augmentor = augmentor if augmentor is not None else AudioAugmentor()
+        # self.augmentor = augmentor if augmentor is not None else AudioAugmentor()
+        self.augmentor = None # augmentor if augmentor is not None else AudioAugmentor()
         self.sample_rate = sample_rate
         self.int_values = int_values
 
@@ -127,29 +84,29 @@ class WaveformFeaturizer(object):
         return self.process_segment(audio)
 
     def process_segment(self, audio_segment):
-        self.augmentor.perturb(audio_segment)
+        # self.augmentor.perturb(audio_segment)
         return torch.tensor(audio_segment.samples, dtype=torch.float)
 
     @classmethod
     def from_config(cls, input_config, perturbation_configs=None):
-        if perturbation_configs is not None:
-            aa = AudioAugmentor.from_config(perturbation_configs)
-        else:
-            aa = None
-
+        # if perturbation_configs is not None:
+        #     aa = AudioAugmentor.from_config(perturbation_configs)
+        # else:
+        #     aa = None
+        aa = None
         sample_rate = input_config.get("sample_rate", 16000)
         int_values = input_config.get("int_values", False)
 
         return cls(sample_rate=sample_rate, int_values=int_values, augmentor=aa)
 
 
-class FeaturizerFactory(object):
-    def __init__(self):
-        pass
+# class FeaturizerFactory(object):
+#     def __init__(self):
+#         pass
 
-    @classmethod
-    def from_config(cls, input_cfg, perturbation_configs=None):
-        return WaveformFeaturizer.from_config(input_cfg, perturbation_configs=perturbation_configs)
+#     @classmethod
+#     def from_config(cls, input_cfg, perturbation_configs=None):
+#         return WaveformFeaturizer.from_config(input_cfg, perturbation_configs=perturbation_configs)
 
 
 # Create helper class to patch forward func for use with AMP
@@ -238,7 +195,7 @@ class FilterbankFeatures(nn.Module):
     ):
         super().__init__()
         if stft_conv or stft_exact_pad:
-            logging.warning(
+            print(
                 "Using torch_stft is deprecated and will be removed in 1.1.0. Please set stft_conv and stft_exact_pad "
                 "to False for FilterbankFeatures and AudioToMelSpectrogramPreprocessor. Please set exact_pad to True "
                 "as needed."
@@ -261,7 +218,7 @@ class FilterbankFeatures(nn.Module):
                 f"{self} got an invalid value for either n_window_size or "
                 f"n_window_stride. Both must be positive ints."
             )
-        logging.info(f"PADDING: {pad_to}")
+        # logging.info(f"PADDING: {pad_to}")
 
         self.win_length = n_window_size
         self.hop_length = n_window_stride
@@ -271,16 +228,16 @@ class FilterbankFeatures(nn.Module):
         self.stft_conv = stft_conv
 
         if stft_conv:
-            logging.info("STFT using conv")
+            # logging.info("STFT using conv")
             if stft_exact_pad:
-                logging.info("STFT using exact pad")
+                # logging.info("STFT using exact pad")
                 self.stft = STFTExactPad(self.n_fft, self.hop_length, self.win_length, window)
             else:
                 self.stft = STFTPatch(self.n_fft, self.hop_length, self.win_length, window)
         else:
-            logging.info("STFT using torch")
+            # logging.info("STFT using torch")
             if exact_pad:
-                logging.info("STFT using exact pad")
+                print("STFT using exact pad")
             torch_windows = {
                 'hann': torch.hann_window,
                 'hamming': torch.hamming_window,
@@ -345,15 +302,15 @@ class FilterbankFeatures(nn.Module):
         # log_zero_guard_value is the the small we want to use, we support
         # an actual number, or "tiny", or "eps"
         self.log_zero_guard_type = log_zero_guard_type
-        logging.debug(f"sr: {sample_rate}")
-        logging.debug(f"n_fft: {self.n_fft}")
-        logging.debug(f"win_length: {self.win_length}")
-        logging.debug(f"hop_length: {self.hop_length}")
-        logging.debug(f"n_mels: {nfilt}")
-        logging.debug(f"fmin: {lowfreq}")
-        logging.debug(f"fmax: {highfreq}")
-        logging.debug(f"using grads: {use_grads}")
-        logging.debug(f"nb_augmentation_prob: {nb_augmentation_prob}")
+        # logging.debug(f"sr: {sample_rate}")
+        # logging.debug(f"n_fft: {self.n_fft}")
+        # logging.debug(f"win_length: {self.win_length}")
+        # logging.debug(f"hop_length: {self.hop_length}")
+        # logging.debug(f"n_mels: {nfilt}")
+        # logging.debug(f"fmin: {lowfreq}")
+        # logging.debug(f"fmax: {highfreq}")
+        # logging.debug(f"using grads: {use_grads}")
+        # logging.debug(f"nb_augmentation_prob: {nb_augmentation_prob}")
 
     def log_zero_guard_value_fn(self, x):
         if isinstance(self.log_zero_guard_value, str):

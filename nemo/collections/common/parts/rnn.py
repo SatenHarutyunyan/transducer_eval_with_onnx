@@ -1,17 +1,4 @@
-# Copyright (c) 2019, Myrtle Software Limited. All rights reserved.
-# Copyright (c) 2020, NVIDIA CORPORATION.  All rights reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+
 
 import math
 from typing import List, Optional, Tuple, Union
@@ -19,7 +6,7 @@ from typing import List, Optional, Tuple, Union
 import numpy as np
 import torch
 
-from nemo.utils import logging
+
 
 
 def rnn(
@@ -115,34 +102,34 @@ def rnn(
         )
 
 
-class OverLastDim(torch.nn.Module):
-    """Collapses a tensor to 2D, applies a module, and (re-)expands the tensor.
-    An n-dimensional tensor of shape (s_1, s_2, ..., s_n) is first collapsed to
-    a tensor with shape (s_1*s_2*...*s_n-1, s_n). The module is called with
-    this as input producing (s_1*s_2*...*s_n-1, s_n') --- note that the final
-    dimension can change. This is expanded to (s_1, s_2, ..., s_n-1, s_n') and
-    returned.
-    Args:
-        module (torch.nn.Module): Module to apply. Must accept a 2D tensor as
-            input and produce a 2D tensor as output, optionally changing the
-            size of the last dimension.
-    """
+# class OverLastDim(torch.nn.Module):
+#     """Collapses a tensor to 2D, applies a module, and (re-)expands the tensor.
+#     An n-dimensional tensor of shape (s_1, s_2, ..., s_n) is first collapsed to
+#     a tensor with shape (s_1*s_2*...*s_n-1, s_n). The module is called with
+#     this as input producing (s_1*s_2*...*s_n-1, s_n') --- note that the final
+#     dimension can change. This is expanded to (s_1, s_2, ..., s_n-1, s_n') and
+#     returned.
+#     Args:
+#         module (torch.nn.Module): Module to apply. Must accept a 2D tensor as
+#             input and produce a 2D tensor as output, optionally changing the
+#             size of the last dimension.
+#     """
 
-    def __init__(self, module: torch.nn.Module):
-        super().__init__()
-        self.module = module
+#     def __init__(self, module: torch.nn.Module):
+#         super().__init__()
+#         self.module = module
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        *dims, _ = x.size()
+#     def forward(self, x: torch.Tensor) -> torch.Tensor:
+#         *dims, _ = x.size()
 
-        reduced_dims = 1
-        for dim in dims:
-            reduced_dims *= dim
+#         reduced_dims = 1
+#         for dim in dims:
+#             reduced_dims *= dim
 
-        x = x.view(reduced_dims, -1)
-        x = self.module(x)
-        x = x.view(*dims, -1)
-        return x
+#         x = x.view(reduced_dims, -1)
+#         x = self.module(x)
+#         x = x.view(*dims, -1)
+#         return x
 
 
 class LSTMDropout(torch.nn.Module):
@@ -231,51 +218,51 @@ class LSTMDropout(torch.nn.Module):
         return x, h
 
 
-class RNNLayer(torch.nn.Module):
-    """A single RNNLayer with optional batch norm."""
+# class RNNLayer(torch.nn.Module):
+#     """A single RNNLayer with optional batch norm."""
 
-    def __init__(
-        self,
-        input_size: int,
-        hidden_size: int,
-        rnn_type: torch.nn.Module = torch.nn.LSTM,
-        batch_norm: bool = True,
-        forget_gate_bias: Optional[float] = 1.0,
-        t_max: Optional[int] = None,
-        weights_init_scale: float = 1.0,
-        hidden_hidden_bias_scale: float = 0.0,
-    ):
-        super().__init__()
+#     def __init__(
+#         self,
+#         input_size: int,
+#         hidden_size: int,
+#         rnn_type: torch.nn.Module = torch.nn.LSTM,
+#         batch_norm: bool = True,
+#         forget_gate_bias: Optional[float] = 1.0,
+#         t_max: Optional[int] = None,
+#         weights_init_scale: float = 1.0,
+#         hidden_hidden_bias_scale: float = 0.0,
+#     ):
+#         super().__init__()
 
-        if batch_norm:
-            self.bn = OverLastDim(torch.nn.BatchNorm1d(input_size))
+#         if batch_norm:
+#             self.bn = OverLastDim(torch.nn.BatchNorm1d(input_size))
 
-        if isinstance(rnn_type, torch.nn.LSTM) and not batch_norm:
-            # batch_norm will apply bias, no need to add a second to LSTM
-            self.rnn = LSTMDropout(
-                input_size=input_size,
-                hidden_size=hidden_size,
-                num_layers=1,
-                dropout=0.0,
-                forget_gate_bias=forget_gate_bias,
-                t_max=t_max,
-                weights_init_scale=weights_init_scale,
-                hidden_hidden_bias_scale=hidden_hidden_bias_scale,
-            )
-        else:
-            self.rnn = rnn_type(input_size=input_size, hidden_size=hidden_size, bias=not batch_norm)
+#         if isinstance(rnn_type, torch.nn.LSTM) and not batch_norm:
+#             # batch_norm will apply bias, no need to add a second to LSTM
+#             self.rnn = LSTMDropout(
+#                 input_size=input_size,
+#                 hidden_size=hidden_size,
+#                 num_layers=1,
+#                 dropout=0.0,
+#                 forget_gate_bias=forget_gate_bias,
+#                 t_max=t_max,
+#                 weights_init_scale=weights_init_scale,
+#                 hidden_hidden_bias_scale=hidden_hidden_bias_scale,
+#             )
+#         else:
+#             self.rnn = rnn_type(input_size=input_size, hidden_size=hidden_size, bias=not batch_norm)
 
-    def forward(
-        self, x: torch.Tensor, hx: Optional[List[Tuple[torch.Tensor, torch.Tensor]]] = None
-    ) -> Tuple[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
-        if hasattr(self, 'bn'):
-            x = x.contiguous()
-            x = self.bn(x)
-        x, h = self.rnn(x, hx=hx)
-        return x, h
+#     def forward(
+#         self, x: torch.Tensor, hx: Optional[List[Tuple[torch.Tensor, torch.Tensor]]] = None
+#     ) -> Tuple[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
+#         if hasattr(self, 'bn'):
+#             x = x.contiguous()
+#             x = self.bn(x)
+#         x, h = self.rnn(x, hx=hx)
+#         return x, h
 
-    def _flatten_parameters(self):
-        self.rnn.flatten_parameters()
+#     def _flatten_parameters(self):
+#         self.rnn.flatten_parameters()
 
 
 class BNRNNSum(torch.nn.Module):
@@ -375,25 +362,25 @@ class BNRNNSum(torch.nn.Module):
                 layer._flatten_parameters()
 
 
-class StackTime(torch.nn.Module):
-    """
-    Stacks time within the feature dim, so as to behave as a downsampling operation.
-    """
+# class StackTime(torch.nn.Module):
+#     """
+#     Stacks time within the feature dim, so as to behave as a downsampling operation.
+#     """
 
-    def __init__(self, factor: int):
-        super().__init__()
-        self.factor = int(factor)
+#     def __init__(self, factor: int):
+#         super().__init__()
+#         self.factor = int(factor)
 
-    def forward(self, x: List[Tuple[torch.Tensor]]) -> (torch.Tensor, torch.Tensor):
-        # T, B, U
-        x, x_lens = x
-        seq = [x]
-        for i in range(1, self.factor):
-            tmp = torch.zeros_like(x)
-            tmp[:-i, :, :] = x[i:, :, :]
-            seq.append(tmp)
-        x_lens = torch.ceil(x_lens.float() / self.factor).int()
-        return torch.cat(seq, dim=2)[:: self.factor, :, :], x_lens
+#     def forward(self, x: List[Tuple[torch.Tensor]]) -> (torch.Tensor, torch.Tensor):
+#         # T, B, U
+#         x, x_lens = x
+#         seq = [x]
+#         for i in range(1, self.factor):
+#             tmp = torch.zeros_like(x)
+#             tmp[:-i, :, :] = x[i:, :, :]
+#             seq.append(tmp)
+#         x_lens = torch.ceil(x_lens.float() / self.factor).int()
+#         return torch.cat(seq, dim=2)[:: self.factor, :, :], x_lens
 
 
 def ln_lstm(
@@ -428,101 +415,101 @@ def ln_lstm(
     )
 
 
-class LSTMLayer(torch.nn.Module):
-    def __init__(self, cell, *cell_args):
-        super(LSTMLayer, self).__init__()
-        self.cell = cell(*cell_args)
+# class LSTMLayer(torch.nn.Module):
+#     def __init__(self, cell, *cell_args):
+#         super(LSTMLayer, self).__init__()
+#         self.cell = cell(*cell_args)
 
-    def forward(
-        self, input: torch.Tensor, state: Tuple[torch.Tensor, torch.Tensor]
-    ) -> Tuple[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
-        inputs = input.unbind(0)
-        outputs = []
-        for i in range(len(inputs)):
-            out, state = self.cell(inputs[i], state)
-            outputs += [out]
-        return torch.stack(outputs), state
-
-
-class LayerNormLSTMCell(torch.nn.Module):
-    def __init__(self, input_size, hidden_size, forget_gate_bias):
-        super().__init__()
-        self.input_size = input_size
-        self.hidden_size = hidden_size
-        self.weight_ih = torch.nn.Parameter(torch.randn(4 * hidden_size, input_size))
-        self.weight_hh = torch.nn.Parameter(torch.randn(4 * hidden_size, hidden_size))
-
-        # LayerNorm provide learnable biases
-        self.layernorm_i = torch.nn.LayerNorm(4 * hidden_size)
-        self.layernorm_h = torch.nn.LayerNorm(4 * hidden_size)
-        self.layernorm_c = torch.nn.LayerNorm(hidden_size)
-
-        self.reset_parameters()
-
-        self.layernorm_i.bias.data[hidden_size : 2 * hidden_size].fill_(0.0)
-        self.layernorm_h.bias.data[hidden_size : 2 * hidden_size].fill_(forget_gate_bias)
-
-    def reset_parameters(self):
-        stdv = 1.0 / math.sqrt(self.hidden_size)
-        for weight in self.parameters():
-            torch.nn.init.uniform_(weight, -stdv, stdv)
-
-    def forward(
-        self, input: torch.Tensor, state: Tuple[torch.Tensor, torch.Tensor]
-    ) -> Tuple[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
-        hx, cx = state
-        igates = self.layernorm_i(torch.mm(input, self.weight_ih.t()))
-        hgates = self.layernorm_h(torch.mm(hx, self.weight_hh.t()))
-        gates = igates + hgates
-        ingate, forgetgate, cellgate, outgate = gates.chunk(4, 1)
-
-        ingate = torch.sigmoid(ingate)
-        forgetgate = torch.sigmoid(forgetgate)
-        cellgate = torch.tanh(cellgate)
-        outgate = torch.sigmoid(outgate)
-
-        cy = self.layernorm_c((forgetgate * cx) + (ingate * cellgate))
-        hy = outgate * torch.tanh(cy)
-
-        return hy, (hy, cy)
+#     def forward(
+#         self, input: torch.Tensor, state: Tuple[torch.Tensor, torch.Tensor]
+#     ) -> Tuple[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
+#         inputs = input.unbind(0)
+#         outputs = []
+#         for i in range(len(inputs)):
+#             out, state = self.cell(inputs[i], state)
+#             outputs += [out]
+#         return torch.stack(outputs), state
 
 
-def init_stacked_lstm(
-    num_layers: int, layer: torch.nn.Module, first_layer_args: List, other_layer_args: List
-) -> torch.nn.ModuleList:
-    layers = [layer(*first_layer_args)] + [layer(*other_layer_args) for _ in range(num_layers - 1)]
-    return torch.nn.ModuleList(layers)
+# class LayerNormLSTMCell(torch.nn.Module):
+#     def __init__(self, input_size, hidden_size, forget_gate_bias):
+#         super().__init__()
+#         self.input_size = input_size
+#         self.hidden_size = hidden_size
+#         self.weight_ih = torch.nn.Parameter(torch.randn(4 * hidden_size, input_size))
+#         self.weight_hh = torch.nn.Parameter(torch.randn(4 * hidden_size, hidden_size))
+
+#         # LayerNorm provide learnable biases
+#         self.layernorm_i = torch.nn.LayerNorm(4 * hidden_size)
+#         self.layernorm_h = torch.nn.LayerNorm(4 * hidden_size)
+#         self.layernorm_c = torch.nn.LayerNorm(hidden_size)
+
+#         self.reset_parameters()
+
+#         self.layernorm_i.bias.data[hidden_size : 2 * hidden_size].fill_(0.0)
+#         self.layernorm_h.bias.data[hidden_size : 2 * hidden_size].fill_(forget_gate_bias)
+
+#     def reset_parameters(self):
+#         stdv = 1.0 / math.sqrt(self.hidden_size)
+#         for weight in self.parameters():
+#             torch.nn.init.uniform_(weight, -stdv, stdv)
+
+#     def forward(
+#         self, input: torch.Tensor, state: Tuple[torch.Tensor, torch.Tensor]
+#     ) -> Tuple[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
+#         hx, cx = state
+#         igates = self.layernorm_i(torch.mm(input, self.weight_ih.t()))
+#         hgates = self.layernorm_h(torch.mm(hx, self.weight_hh.t()))
+#         gates = igates + hgates
+#         ingate, forgetgate, cellgate, outgate = gates.chunk(4, 1)
+
+#         ingate = torch.sigmoid(ingate)
+#         forgetgate = torch.sigmoid(forgetgate)
+#         cellgate = torch.tanh(cellgate)
+#         outgate = torch.sigmoid(outgate)
+
+#         cy = self.layernorm_c((forgetgate * cx) + (ingate * cellgate))
+#         hy = outgate * torch.tanh(cy)
+
+#         return hy, (hy, cy)
 
 
-class StackedLSTM(torch.nn.Module):
-    def __init__(self, num_layers: int, layer: torch.nn.Module, first_layer_args: List, other_layer_args: List):
-        super(StackedLSTM, self).__init__()
-        self.layers: torch.nn.ModuleList = init_stacked_lstm(num_layers, layer, first_layer_args, other_layer_args)
+# def init_stacked_lstm(
+#     num_layers: int, layer: torch.nn.Module, first_layer_args: List, other_layer_args: List
+# ) -> torch.nn.ModuleList:
+#     layers = [layer(*first_layer_args)] + [layer(*other_layer_args) for _ in range(num_layers - 1)]
+#     return torch.nn.ModuleList(layers)
 
-    def forward(
-        self, input: torch.Tensor, states: Optional[List[Tuple[torch.Tensor, torch.Tensor]]]
-    ) -> Tuple[torch.Tensor, List[Tuple[torch.Tensor, torch.Tensor]]]:
-        if states is None:
-            temp_states: List[Tuple[torch.Tensor, torch.Tensor]] = []
-            batch = input.size(1)
-            for layer in self.layers:
-                temp_states.append(
-                    (
-                        torch.zeros(batch, layer.cell.hidden_size, dtype=input.dtype, device=input.device),
-                        torch.zeros(batch, layer.cell.hidden_size, dtype=input.dtype, device=input.device),
-                    )
-                )
 
-            states = temp_states
+# class StackedLSTM(torch.nn.Module):
+#     def __init__(self, num_layers: int, layer: torch.nn.Module, first_layer_args: List, other_layer_args: List):
+#         super(StackedLSTM, self).__init__()
+#         self.layers: torch.nn.ModuleList = init_stacked_lstm(num_layers, layer, first_layer_args, other_layer_args)
 
-        output_states: List[Tuple[torch.Tensor, torch.Tensor]] = []
-        output = input
-        for i, rnn_layer in enumerate(self.layers):
-            state = states[i]
-            output, out_state = rnn_layer(output, state)
-            output_states.append(out_state)
-            i += 1
-        return output, output_states
+#     def forward(
+#         self, input: torch.Tensor, states: Optional[List[Tuple[torch.Tensor, torch.Tensor]]]
+#     ) -> Tuple[torch.Tensor, List[Tuple[torch.Tensor, torch.Tensor]]]:
+#         if states is None:
+#             temp_states: List[Tuple[torch.Tensor, torch.Tensor]] = []
+#             batch = input.size(1)
+#             for layer in self.layers:
+#                 temp_states.append(
+#                     (
+#                         torch.zeros(batch, layer.cell.hidden_size, dtype=input.dtype, device=input.device),
+#                         torch.zeros(batch, layer.cell.hidden_size, dtype=input.dtype, device=input.device),
+#                     )
+#                 )
+
+#             states = temp_states
+
+#         output_states: List[Tuple[torch.Tensor, torch.Tensor]] = []
+#         output = input
+#         for i, rnn_layer in enumerate(self.layers):
+#             state = states[i]
+#             output, out_state = rnn_layer(output, state)
+#             output_states.append(out_state)
+#             i += 1
+#         return output, output_states
 
 
 def label_collate(labels, device=None):
